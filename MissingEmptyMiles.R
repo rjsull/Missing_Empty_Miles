@@ -3,8 +3,8 @@ library(tidyverse)
 library(RODBC)
 library(openxlsx)
 
-###Connect to TMW Suite Replication
-dbhandle <- odbcDriverConnect('driver={SQL Server};server=NFIV-SQLTMW-04;database=TMWSuite;trusted_connection=true')
+###Connect to TMW Suite Replication, enter the server name where the x is
+dbhandle <- odbcDriverConnect('driver={SQL Server};server=x;database=TMWSuite;trusted_connection=true')
 
 ###Contains SQL for finding what moves end and start in different cities. Ops uses this to add empty mile segements to orders that way the drivers get paid for the miles driven. Goal is to have no missing empty miles.
 missingEmptyMiles <- sqlQuery(dbhandle, "
