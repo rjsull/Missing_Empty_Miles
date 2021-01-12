@@ -6,15 +6,38 @@ library(openxlsx)
 ###Connect to TMW Suite Replication
 dbhandle <- odbcDriverConnect('driver={SQL Server};server=NFIV-SQLTMW-04;database=TMWSuite;trusted_connection=true')
 
-###Contains SQL for G&P Assigned Trailers Sitting on Yards
+###Contains SQL for finding what moves end and start in different cities. Ops uses this to add empty mile segements to orders that way the drivers get paid for the miles driven. Goal is to have no missing empty miles.
 missingEmptyMiles <- sqlQuery(dbhandle, "
 DECLARE @DateStart DATETIME, 
 @DateEnd DATETIME, 
-@Branch VARCHAR(12)
+@Branch1 VARCHAR(12),
+@Branch2 VARCHAR(12),
+@Branch3 VARCHAR(12),
+@Branch4 VARCHAR(12),
+@Branch5 VARCHAR(12),
+@Branch6 VARCHAR(12),
+@Branch7 VARCHAR(12)
 
-SET @DateStart = '12-27-2020'  --DATEADD(dd, -(datepart(dw, GetDate())+7), GetDate())
-SET @DateEnd = '01-02-2021' --DATEADD(dd, -datepart(dw, GetDate()+1), GetDate())
-SET @Branch = '580' 
+
+SET @DateStart = 
+	CASE 
+	WHEN DATEPART(DW,GETDATE()) = 4 OR DATEPART(DW,GETDATE()) = 5 OR DATEPART(DW,GETDATE()) = 6 OR DATEPART(DW,GETDATE()) = 7 --On Wed, Thu, and Fri Mornings, send Start of Current Week
+	THEN DATEADD(wk, 0, DATEADD(DAY, 1-DATEPART(WEEKDAY, GETDATE()), DATEDIFF(dd, 0, GETDATE()))) --first day current week
+	ELSE DATEADD(wk, -1, DATEADD(DAY, 1-DATEPART(WEEKDAY, GETDATE()), DATEDIFF(dd, 0, GETDATE()))) --first day previous week
+	END
+SET @DateEnd = 	
+	CASE 
+	WHEN DATEPART(DW,GETDATE()) = 4 OR DATEPART(DW,GETDATE()) = 5 OR DATEPART(DW,GETDATE()) = 6  OR DATEPART(DW,GETDATE()) = 7 --On Wed, Thu, and Fri Mornings, send End of Current Week
+	THEN DATEADD(wk, 1, DATEADD(DAY, 0-DATEPART(WEEKDAY, GETDATE()), DATEDIFF(dd, 0, GETDATE()))) --last day current week
+	ELSE DATEADD(wk, 0, DATEADD(DAY, 0-DATEPART(WEEKDAY, GETDATE()), DATEDIFF(dd, 0, GETDATE()))) --last day previous week
+	END
+SET @Branch1 = '570'
+SET @Branch2 = '571'
+SET @Branch3 = '572'
+SET @Branch4 = '573'
+SET @Branch5 = '574'
+SET @Branch6 = '580'
+SET @Branch7 = '581'
 
 SELECT a.*
 FROM (
@@ -42,7 +65,7 @@ Consignee=cmp_id_rend,
 [Leg Miles] = lgh.lgh_miles, 
 [Ref#]=ord.ord_refnum, 
 [Update User]=lgh.lgh_updatedby, 
-[Last Update]=FORMAT(lgh.lgh_updatedon,'MM/dd/yyyy HH:mm'),
+[Last Update]=lgh.lgh_updatedon,
 [Fleet Manager] = mpp.mpp_teamleader,
 [MissingOrder] = 
 	CASE 
@@ -73,7 +96,7 @@ LEFT JOIN city ctyShip ON ord.ord_origincity = ctyShip.cty_code
 LEFT JOIN city ctyCon ON ord.ord_destcity = ctyCon.cty_code 
 LEFT JOIN manpowerprofile mpp ON lgh.lgh_driver1 = mpp.mpp_id
 WHERE CONVERT(varchar(10),lgh.lgh_startdate,102) BETWEEN '' + CONVERT(varchar(10),@DateStart,102) + '' AND '' + CONVERT(varchar(10),@DateEnd,102) + ''
-AND trc.trc_branch = @Branch
+AND trc.trc_branch IN (@Branch1, @Branch2, @Branch3, @Branch4, @Branch5, @Branch6, @Branch7)
 AND lgh.lgh_outstatus = 'CMP'
 --AND lgh.lgh_driver1 IN ('CLEAN')
 --ORDER BY lgh.lgh_driver1 ASC,
@@ -108,7 +131,7 @@ Consignee=cmp_id_rend,
 [Leg Miles] = lgh.lgh_miles, 
 [Ref#]=ord.ord_refnum, 
 [Update User]=lgh.lgh_updatedby, 
-[Last Update]=FORMAT(lgh.lgh_updatedon,'MM/dd/yyyy HH:mm'),
+[Last Update]=lgh.lgh_updatedon,
 [Fleet Manager] = mpp.mpp_teamleader,
 [MissingOrder] = 
 	CASE 
@@ -139,7 +162,7 @@ LEFT JOIN city ctyShip ON ord.ord_origincity = ctyShip.cty_code
 LEFT JOIN city ctyCon ON ord.ord_destcity = ctyCon.cty_code 
 LEFT JOIN manpowerprofile mpp ON lgh.lgh_driver1 = mpp.mpp_id
 WHERE CONVERT(varchar(10),lgh.lgh_startdate,102) BETWEEN '' + CONVERT(varchar(10),@DateStart,102) + '' AND '' + CONVERT(varchar(10),@DateEnd,102) + ''
-AND trc.trc_branch = @Branch
+AND trc.trc_branch IN (@Branch1, @Branch2, @Branch3, @Branch4, @Branch5, @Branch6, @Branch7)
 AND lgh.lgh_outstatus = 'CMP'
 )
 AS a
@@ -152,9 +175,8 @@ odbcClose(dbhandle)
 ###Create summary sheet
 df <- data.frame(missingEmptyMiles)
 df_filtered <- df %>% subset(MissingOrder!='0')
-df_filtered <- df_filtered %>% select (26,2,3,6,27,10,28,29)
-colnames(df_filtered) <- c("FleetMgr","Tractor","Driver","OrderNumber","MissingOrder","StartDate","MissingStartCity","MissingEndCity","Miles")
-df_filtered
+df_filtered <- df_filtered %>% select (1,26,2,3,6,27,10,28,29)
+df_filtered<-df_filtered[order(df_filtered$Tractor.Branch, df_filtered$Driver.Name),]
 
 ###Create Excel File and add sheets with data  
 wb <- createWorkbook(creator = ifelse(.Platform$OS.type == "windows", Sys.getenv("USERNAME"), Sys.getenv("USER")))
@@ -170,9 +192,9 @@ writeData(wb, sheet2, df, startCol = 1, startRow = 1, colNames = TRUE, rowNames 
 
 ###Add PC Miler Formula with Header
 Header <- c('TEXT("Miles",0)')
-writeFormula(wb, sheet = 1, x = Header, startCol = 9, startRow = 1)
-MilesFormula = paste(paste0("Miles("), paste(paste0("G", 1:nrow(df_filtered) + 1L), paste0("H", 1:nrow(df_filtered) + 1L), sep = ","), paste0(")"))
-writeFormula(wb, sheet = 1, x = MilesFormula, startCol = 9, startRow = 2)
+writeFormula(wb, sheet = 1, x = Header, startCol = 10, startRow = 1)
+MilesFormula = paste(paste0("Miles("), paste(paste0("H", 1:nrow(df_filtered) + 1L), paste0("I", 1:nrow(df_filtered) + 1L), sep = ","), paste0(")"))
+writeFormula(wb, sheet = 1, x = MilesFormula, startCol = 10, startRow = 2)
 
 
 ###Format sheets, add filters, freeze panes, auto fit columns 
@@ -183,6 +205,6 @@ freezePane(wb, sheet2, firstRow = TRUE)
 setColWidths(wb, sheet1, cols = 1:n, widths = "auto")
 setColWidths(wb, sheet2, cols = 1:n2, widths = "auto")
 
-###Save workbook 
+###Save workbook, change path to save file locally 
 saveWorkbook(wb, file = "C:/Users/sullivanry/Documents/MissingEmptyMiles.xlsx", overwrite = TRUE)
 
