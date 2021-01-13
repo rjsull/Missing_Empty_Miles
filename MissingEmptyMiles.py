@@ -10,10 +10,11 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase 
 from email import encoders 
 
-# Put your email for fromaddr and add recipients for toaddr and bcc
 fromaddr = 'x'
 toaddr = ['x']
-bcc = ['x', 'x', 'x']
+bcc = ['x','x']
+
+toaddrs = [toaddr] + bcc
 
 # instance of MIMEMultipart 
 msg = MIMEMultipart() 
@@ -34,8 +35,6 @@ All,
 Attached is the missing empty miles summary. 
 
 Thanks,
---
-
 </font></pre>"""
 
 # attach the body with the msg instance 
@@ -74,14 +73,14 @@ s = smtplib.SMTP('smtp.gmail.com', 587)
 # start TLS for security 
 s.starttls() 
 
-# Authentication, Enter Your Password Below where the x is
+# Authentication, Enter Your Password Below where the x is (need to have less strict settings on google account security 
 s.login(fromaddr, "x") 
   
 # Converts the Multipart msg into a string 
 text = msg.as_string() 
   
 # sending the mail 
-s.sendmail(fromaddr, toaddr, text) 
+s.sendmail(fromaddr, toaddrs, text) 
   
 # terminating the session 
 s.quit() 
